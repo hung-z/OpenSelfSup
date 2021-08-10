@@ -1,3 +1,4 @@
+from openselfsup.datasets import pipelines
 import torch
 import torch.nn as nn
 
