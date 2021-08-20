@@ -5,14 +5,12 @@ model = dict(
     pretrained=None,
     with_sobel=False,
     backbone=dict(
-        type='ResNet',
-        depth=50,
-        in_channels=3,
-        out_indices=[4],  # 0: conv-1, x: stage-x
-        norm_cfg=dict(type='BN'),
-        frozen_stages=4),
+        type='Yolov4tiny',
+        ch=3,
+        cfg='/media/dso/Hung/VietHungTran/scale_yolodso/models/voc/vocyolov4-tiny.yaml',
+        frozen=1),
     head=dict(
-        type='ClsHead', with_avg_pool=True, in_channels=2048,
+        type='ClsHead', with_avg_pool=True, in_channels=512,
         num_classes=1000))
 # dataset settings
 data_source_cfg = dict(
@@ -68,7 +66,7 @@ custom_hooks = [
         eval_param=dict(topk=(1, 5)))
 ]
 # optimizer
-optimizer = dict(type='SGD', lr=30., momentum=0.9, weight_decay=0.)
+optimizer = dict(type='SGD', lr=0.3, momentum=0.9, weight_decay=0.)
 # learning policy
 lr_config = dict(policy='step', step=[60, 80])
 checkpoint_config = dict(interval=10)

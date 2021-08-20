@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 
 from ..yolo_models.common import *
-from ..yolo_models.experimental import MixConv2d, CrossConv, C3
+from ..yolo_models.experimental import MixConv2d, CrossConv, C3, attempt_load
 from ..yolo_utils.general import check_anchor_order, make_divisible, check_file
 from ..yolo_utils.torch_utils import (
     time_synchronized, fuse_conv_and_bn, model_info, scale_img, initialize_weights, select_device)
@@ -108,7 +108,7 @@ class Detect_nodefined(nn.Module):
 
 @BACKBONES.register_module
 class Yolov4tiny(nn.Module):
-    def __init__(self, cfg='yolov4-p5.yaml', ch=3, nc=None):  # model, input channels, number of classes
+    def __init__(self, cfg='', ch=3, nc=None, frozen=-1):  # model, input channels, number of classes
         super(Yolov4tiny, self).__init__()
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
@@ -122,7 +122,7 @@ class Yolov4tiny(nn.Module):
         if nc and nc != self.yaml['nc']:
             print('Overriding %s nc=%g with nc=%g' % (cfg, self.yaml['nc'], nc))
             self.yaml['nc'] = nc  # override yaml value
-        self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist, ch_out
+        self.model, self.save = parse_backbone_model(deepcopy(self.yaml), ch=[ch])  # model, savelist, ch_out
         # Testing time
         # parse_model_modules_pair(deepcopy(self.yaml), ch=[ch])
         # print([x.shape for x in self.forward(torch.zeros(1, ch, 64, 64))])
@@ -147,9 +147,28 @@ class Yolov4tiny(nn.Module):
             print('')
             return
         # Init weights, biases
-        initialize_weights(self)
         self.info()
         print('')
+        self.frozen = frozen
+        if(self.frozen > 0):
+            self._freeze_stages()
+    
+    def _freeze_stages(self):
+        for m in self.model:
+            # print(m)
+            m.eval()
+            attributes = dir(m)
+            if 'bn' in attributes:
+                print(m.bn)
+                m.bn.eval()
+                m.bn.requires_grad = False
+            for param in m.parameters():
+                param.requires_grad = False
+
+
+    
+    def init_weights(self, pretrained=None):
+        initialize_weights(self)
 
     def forward(self, x, augment=False, profile=False):
         if augment:
@@ -194,7 +213,7 @@ class Yolov4tiny(nn.Module):
 
         if profile:
             print('%.1fms total' % sum(dt))
-        return x
+        return tuple([x])
 
     def _initialize_biases(self, cf=None):  # initialize biases into Detect(), cf is class frequency
         # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1.
@@ -247,14 +266,14 @@ class Yolov4tiny(nn.Module):
         model_info(self)
 
 
-def parse_model(d, ch):  # model_dict, input_channels(3)
+def parse_backbone_model(d, ch):  # model_dict, input_channels(3)
     print('\n%3s%18s%3s%10s  %-40s%-30s' % ('', 'from', 'n', 'params', 'module', 'arguments'))
     anchors, nc, gd, gw = d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple']
     na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
     no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
 
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
-    for i, (f, n, m, args) in enumerate(d['backbone'] + d['head']):  # from, number, module, args
+    for i, (f, n, m, args) in enumerate(d['backbone']):  # from, number, module, args
         m = eval(m) if isinstance(m, str) else m  # eval strings
         for j, a in enumerate(args):
             try:
